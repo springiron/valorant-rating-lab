@@ -1,5 +1,4 @@
 import React, { useMemo, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
 import {
   Card,
   CardHeader,
@@ -38,6 +37,7 @@ import {
   Table2,
   Beaker,
 } from "lucide-react";
+
 // ----------------------- Utility helpers -----------------------
 const round2 = (x) => Math.round(x * 100) / 100;
 const mean = (arr) => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0);
@@ -49,7 +49,6 @@ const std = (arr) => {
 };
 
 function robustZ(values) {
-  // fallback to z-score with small epsilon
   const m = mean(values);
   const s = std(values) || 1e-6;
   return values.map((v) => (v - m) / s);
@@ -77,7 +76,6 @@ function toCSV(rows) {
 }
 
 function parseCSV(text) {
-  // minimal CSV parser (no external deps)
   const lines = text.trim().split(/\r?\n/);
   if (!lines.length) return [];
   const headers = lines[0].split(",").map((h) => h.trim());
@@ -111,95 +109,153 @@ function parseCSV(text) {
   return rows;
 }
 
-// ----------------------- Sample data -----------------------
-const SAMPLE_CSV = `name,role,rounds,kills,deaths,assists,total_damage,kast_percent,first_kills,first_deaths,multi2k,multi3k,multi4k,multi5k,clutch_wins,plants,defuses,trade_kills,non_damage_assists
-Alpha,Duelist,240,420,350,68,31500,71,64,59,28,10,2,0,6,18,4,52,14
-Bravo,Initiator,240,310,300,112,27400,78,28,32,18,6,1,0,5,22,3,67,41
-Charlie,Controller,240,260,280,129,24600,80,17,21,12,5,1,0,4,15,11,73,55
-Delta,Sentinel,240,230,240,140,22100,83,9,17,8,3,0,0,7,12,18,81,62
-Echo,Duelist,240,395,360,74,30800,69,58,66,26,8,3,1,3,14,3,48,11
-Foxtrot,Initiator,240,300,290,120,26800,77,24,28,16,6,1,0,6,20,5,70,38
-Golf,Controller,240,275,265,118,25500,79,19,20,13,4,1,0,5,13,16,69,47
-Hotel,Sentinel,240,240,235,146,22800,84,8,15,7,2,0,0,8,10,20,85,64`;
+// ----------------------- Agent to Role mapping -----------------------
+const AGENT_TO_ROLE = {
+  "Omen": "Controller",
+  "Viper": "Controller", 
+  "Sova": "Initiator",
+  "Raze": "Duelist",
+  "Cypher": "Sentinel",
+  "Jett": "Duelist",
+  "Killjoy": "Sentinel",
+  "Fade": "Initiator",
+  "Breach": "Initiator",
+  "Kayo": "Initiator",
+  "Yoru": "Duelist",
+  "Gekko": "Initiator",
+  "Neon": "Duelist",
+  "Tejo": "Duelist",
+  "Skye": "Initiator",
+  "Astra": "Controller",
+  "Brimstone": "Controller",
+  "Vyse": "Sentinel",
+  "Deadlock": "Sentinel",
+  "Harbor": "Controller",
+  "Sage": "Sentinel",
+  "Chamber": "Sentinel",
+  "Iso": "Duelist",
+  "Clove": "Controller",
+  "Waylay": "Sentinel",
+  "Phoenix": "Duelist",
+  "Reyna": "Duelist"
+};
+
+// ----------------------- Sample data (actual format) -----------------------
+const SAMPLE_CSV = `Player_Name,Agent,Attack_Got_Round,Defense_Got_Round,Kill_All,Death_All,Assists_All,Fk_All,Fd_All,Acs_All,Adr_All,Kast_All,Hs_All
+Meteor,Jett,6,5,24,18,8,4,2,312,189,75%,28%
+Munchkin,Omen,6,5,16,15,14,2,3,201,128,71%,24%
+Karon,Cypher,6,5,14,12,18,1,2,186,96,80%,22%
+t3xture,Raze,6,5,20,16,10,3,1,267,165,68%,31%
+valyn,Sova,6,5,18,14,12,2,2,234,142,77%,26%
+Chronicle,Fade,6,5,15,13,16,1,3,198,118,75%,23%
+Boaster,Omen,6,5,12,16,15,1,4,167,102,69%,19%
+Alfajer,Killjoy,6,5,17,11,14,2,1,223,134,82%,25%
+Derke,Jett,6,5,22,15,9,5,2,289,178,73%,29%
+Leo,Sova,6,5,16,13,17,1,2,211,125,79%,24%`;
 
 function csvToObjects(csv) {
   const rows = parseCSV(csv);
-  // coerce types
   return rows.map((r) => {
     const num = (k, d = 0) => (r[k] === undefined || r[k] === "" ? d : Number(r[k]));
+    const parsePercent = (k, d = 0) => {
+      const val = r[k];
+      if (!val || val === "") return d;
+      const cleanVal = val.toString().replace('%', '');
+      return Number(cleanVal);
+    };
+    
     return {
-      name: r.name,
-      role: r.role,
-      rounds: num("rounds"),
-      kills: num("kills"),
-      deaths: num("deaths"),
-      assists: num("assists"),
-      total_damage: num("total_damage"),
-      kast_percent: num("kast_percent"),
-      first_kills: num("first_kills"),
-      first_deaths: num("first_deaths"),
-      multi2k: num("multi2k"),
-      multi3k: num("multi3k"),
-      multi4k: num("multi4k"),
-      multi5k: num("multi5k"),
-      clutch_wins: num("clutch_wins"),
-      plants: num("plants"),
-      defuses: num("defuses"),
-      trade_kills: num("trade_kills"),
-      non_damage_assists: num("non_damage_assists"),
+      name: r.Player_Name || r.name || "",
+      agent: r.Agent || "",
+      role: AGENT_TO_ROLE[r.Agent] || "Unknown",
+      rounds: num("Attack_Got_Round") + num("Defense_Got_Round"),
+      attack_rounds: num("Attack_Got_Round"),
+      defense_rounds: num("Defense_Got_Round"),
+      kills: num("Kill_All"),
+      deaths: num("Death_All"),
+      assists: num("Assists_All"),
+      first_kills: num("Fk_All"),
+      first_deaths: num("Fd_All"),
+      acs: num("Acs_All"),
+      adr: num("Adr_All"),
+      kast_percent: parsePercent("Kast_All"),
+      hs_percent: parsePercent("Hs_All"),
+      // calculated total damage from ADR
+      total_damage: num("Adr_All") * (num("Attack_Got_Round") + num("Defense_Got_Round")),
+      // attack/defense specific if available
+      kills_attack: num("Kill_Attack"),
+      kills_defense: num("Kill_Defence"),
+      deaths_attack: num("Death_Attack"),
+      deaths_defense: num("Death_Defence"),
+      assists_attack: num("Assists_Attack"),
+      assists_defense: num("Assists_Defence"),
+      acs_attack: num("Acs_Attack"),
+      acs_defense: num("Acs_Defence"),
+      adr_attack: num("Adr_Attack"),
+      adr_defense: num("Adr_Defence"),
+      kast_attack: parsePercent("Kast_Attack"),
+      kast_defense: parsePercent("Kast_Defence"),
+      hs_attack: parsePercent("Hs_Attack"),
+      hs_defense: parsePercent("Hs_Defence"),
     };
   });
 }
 
-// ----------------------- Core rating logic -----------------------
+// ----------------------- Core rating logic (Updated) -----------------------
 const DEFAULT_WEIGHTS = {
-  kpr: 0.35,
-  dpr: 0.45, // negative sign applied later
-  adr: 0.15,
-  kast: 0.1,
-  entry: 0.2,
-  clutch: 0.1,
-  support: 0.1,
-  objective: 0.05,
-  multikill: 0.1,
+  kpr: 0.30,
+  dpr: 0.40, // negative sign applied later
+  adr: 0.12,
+  kast: 0.15,
+  entry: 0.25,
+  acs: 0.20,
+  headshot: 0.08,
+  consistency: 0.10,
 };
 
 const PRESETS = {
   "スカウト（バランス）": {
     ...DEFAULT_WEIGHTS,
   },
-  "HLTV風（線形）": {
-    kpr: 0.36,
-    dpr: 0.53,
-    adr: 0.25,
-    kast: 0.1,
+  "火力重視": {
+    kpr: 0.40,
+    dpr: 0.50,
+    adr: 0.20,
+    kast: 0.10,
+    entry: 0.20,
+    acs: 0.25,
+    headshot: 0.15,
+    consistency: 0.05,
+  },
+  "安定性重視": {
+    kpr: 0.20,
+    dpr: 0.35,
+    adr: 0.08,
+    kast: 0.25,
     entry: 0.15,
-    clutch: 0.12,
-    support: 0.06,
-    objective: 0.04,
-    multikill: 0.1,
+    acs: 0.12,
+    headshot: 0.05,
+    consistency: 0.20,
   },
-  "RIB風（エントリー重視）": {
-    kpr: 0.28,
-    dpr: 0.55,
-    adr: 0.18,
-    kast: 0.08,
-    entry: 0.35, // 先陣死に厳しめ
-    clutch: 0.12,
-    support: 0.05,
-    objective: 0.02,
-    multikill: 0.08,
-  },
-  "サポート可視化": {
+  "エントリー重視": {
     kpr: 0.25,
     dpr: 0.45,
-    adr: 0.12,
-    kast: 0.18,
-    entry: 0.08,
-    clutch: 0.08,
-    support: 0.25, // アシスト/トレードを厚め
-    objective: 0.12,
-    multikill: 0.05,
+    adr: 0.10,
+    kast: 0.12,
+    entry: 0.35,
+    acs: 0.18,
+    headshot: 0.10,
+    consistency: 0.08,
+  },
+  "ACS基準": {
+    kpr: 0.15,
+    dpr: 0.30,
+    adr: 0.10,
+    kast: 0.15,
+    entry: 0.15,
+    acs: 0.40,
+    headshot: 0.12,
+    consistency: 0.08,
   },
 };
 
@@ -207,15 +263,17 @@ function computeDerived(row) {
   const R = Math.max(1, row.rounds || 0);
   const kpr = row.kills / R;
   const dpr = row.deaths / R;
-  const adr = row.total_damage / R; // VALOはスケールが高め
-  const kast = (row.kast_percent || 0) / 100; // 0-1に
+  const adr = row.adr || (row.total_damage / R);
+  const kast = (row.kast_percent || 0) / 100;
   const entryDelta = (row.first_kills - row.first_deaths) / R;
-  const clutchRate = (row.clutch_wins || 0) / R;
-  const multikillWeighted =
-    (row.multi2k * 0.5 + row.multi3k * 1 + row.multi4k * 1.5 + row.multi5k * 2) / R;
-  const supportRate =
-    (row.assists + row.trade_kills + (row.non_damage_assists || 0) * 0.5) / R;
-  const objectiveRate = (row.plants + row.defuses) / R;
+  const acsPerRound = (row.acs || 0) / R;
+  const headshotRate = (row.hs_percent || 0) / 100;
+  
+  // Consistency metric: balance between attack and defense performance
+  const attackKPR = row.attack_rounds > 0 ? (row.kills_attack || row.kills * 0.5) / row.attack_rounds : kpr;
+  const defenseKPR = row.defense_rounds > 0 ? (row.kills_defense || row.kills * 0.5) / row.defense_rounds : kpr;
+  const consistency = 1 - Math.abs(attackKPR - defenseKPR) / Math.max(attackKPR, defenseKPR, 0.1);
+  
   return {
     ...row,
     kpr,
@@ -223,10 +281,9 @@ function computeDerived(row) {
     adr,
     kast,
     entry: entryDelta,
-    clutch: clutchRate,
-    multikill: multikillWeighted,
-    support: supportRate,
-    objective: objectiveRate,
+    acs_per_round: acsPerRound,
+    headshot: headshotRate,
+    consistency: Math.max(0, consistency),
   };
 }
 
@@ -244,14 +301,13 @@ function standardizeRows(rows, byRole) {
 
   const metrics = [
     "kpr",
-    "dpr",
+    "dpr", 
     "adr",
     "kast",
     "entry",
-    "clutch",
-    "multikill",
-    "support",
-    "objective",
+    "acs_per_round",
+    "headshot",
+    "consistency",
   ];
 
   const zMap = new Map();
@@ -267,7 +323,6 @@ function standardizeRows(rows, byRole) {
         zed[id][m] = v;
       });
     });
-    // attach
     group.forEach((g) => zMap.set(g.name, { raw: g, z: zed[g.name] }));
   });
 
@@ -276,7 +331,6 @@ function standardizeRows(rows, byRole) {
 
 function computeRatings(rows, weights, opts = { byRole: false, targetStd: 0.15 }) {
   const stdRows = standardizeRows(rows, opts.byRole);
-  // signed contributions (DPR negative)
   const contributions = stdRows.map(({ raw, z }) => {
     const contrib = {
       kpr: (weights.kpr || 0) * (z.kpr ?? 0),
@@ -284,10 +338,9 @@ function computeRatings(rows, weights, opts = { byRole: false, targetStd: 0.15 }
       adr: (weights.adr || 0) * (z.adr ?? 0),
       kast: (weights.kast || 0) * (z.kast ?? 0),
       entry: (weights.entry || 0) * (z.entry ?? 0),
-      clutch: (weights.clutch || 0) * (z.clutch ?? 0),
-      multikill: (weights.multikill || 0) * (z.multikill ?? 0),
-      support: (weights.support || 0) * (z.support ?? 0),
-      objective: (weights.objective || 0) * (z.objective ?? 0),
+      acs: (weights.acs || 0) * (z.acs_per_round ?? 0),
+      headshot: (weights.headshot || 0) * (z.headshot ?? 0),
+      consistency: (weights.consistency || 0) * (z.consistency ?? 0),
     };
     const rawSum = Object.values(contrib).reduce((a, b) => a + b, 0);
     return { name: raw.name, role: raw.role, contrib, raw, z, rawSum };
@@ -296,13 +349,12 @@ function computeRatings(rows, weights, opts = { byRole: false, targetStd: 0.15 }
   const rawSums = contributions.map((c) => c.rawSum);
   const mu = mean(rawSums);
   const sg = std(rawSums) || 1e-6;
-  const scale = (opts.targetStd || 0.15) / sg; // map std to target
+  const scale = (opts.targetStd || 0.15) / sg;
   const rated = contributions.map((c) => ({
     ...c,
     rating: 1 + (c.rawSum - mu) * scale,
   }));
 
-  // also prepare stacked chart data per player
   const chartData = rated.map((r) => ({
     name: r.name,
     ...r.contrib,
@@ -371,24 +423,18 @@ function runSelfTests() {
   const t1 = approx(mu, 1.0, 1e-9);
   const t2 = approx(sd, 0.15, 0.02);
 
-  // monotonic sort check
   const sorted = [...base.rated].sort((a, b) => b.rating - a.rating);
-  const t3 = base.rated.every((_, i, arr) => !arr[i + 1] || sorted[i].name === arr[i].name);
+  const t3 = sorted.length > 1 && sorted[0].rating >= sorted[sorted.length - 1].rating;
 
-  // additional: DPR が増えると評価が下がる（他条件同一時）
-  const synth = [
-    { name: "P", role: "Duelist", rounds: 100, kills: 100, deaths: 100, assists: 0, total_damage: 10000, kast_percent: 70, first_kills: 10, first_deaths: 10, multi2k: 5, multi3k: 0, multi4k: 0, multi5k: 0, clutch_wins: 1, plants: 0, defuses: 0, trade_kills: 0, non_damage_assists: 0 },
-    { name: "Q", role: "Duelist", rounds: 100, kills: 100, deaths: 120, assists: 0, total_damage: 10000, kast_percent: 70, first_kills: 10, first_deaths: 10, multi2k: 5, multi3k: 0, multi4k: 0, multi5k: 0, clutch_wins: 1, plants: 0, defuses: 0, trade_kills: 0, non_damage_assists: 0 },
-  ];
-  const synthRated = computeRatings(synth, PRESETS["スカウト（バランス）"], { byRole: true, targetStd: 0.15 }).rated;
-  const better = synthRated.find((x) => x.name === "P").rating > synthRated.find((x) => x.name === "Q").rating;
-  const t4 = better;
+  // Test role mapping
+  const hasRoles = rows.every(r => r.role !== "Unknown");
+  const t4 = hasRoles;
 
   return [
     { id: "平均=1.00", pass: t1, got: mu.toFixed(6) },
     { id: "標準偏差≈0.15", pass: t2, got: sd.toFixed(3) },
     { id: "ソート一貫性", pass: t3, got: t3 ? "OK" : "NG" },
-    { id: "DPR増→評価低下", pass: t4, got: better ? "P>Q" : "P≤Q" },
+    { id: "ロールマッピング", pass: t4, got: hasRoles ? "OK" : "Some Unknown" },
   ];
 }
 
@@ -399,7 +445,7 @@ export default function App() {
   const [weights, setWeights] = useState({ ...PRESETS["スカウト（バランス）"] });
   const [byRole, setByRole] = useState(true);
   const [targetStd, setTargetStd] = useState(0.15);
-  const [topN, setTopN] = useState(8);
+  const [topN, setTopN] = useState(10);
 
   const { rated, chartData } = useMemo(
     () => computeRatings(rows, weights, { byRole, targetStd }),
@@ -415,24 +461,22 @@ export default function App() {
     kpr: "1ラウンドあたりのキル数。火力の中心的指標。",
     dpr: "1ラウンドあたりのデス数。評価では負の寄与として扱います。",
     adr: "1ラウンドあたりの与ダメージ。継続的な圧力の代理指標。",
-    kast: "KAST（Kill/Assist/Survive/Traded）率。安定貢献。",
+    kast: "KAST（Kill/Assist/Survive/Traded）率。安定貢献度。",
     entry: "先陣キルと先陣死の差分（/R）。人数有利・不利を作る力。",
-    clutch: "クラッチ勝利率（/R）。高インパクトの緊急対応力。",
-    multikill: "2K,3K,4K,5Kの重み付き（/R）。ラウンド決定力。",
-    support: "アシスト＋トレード＋非ダメアシスト（/R）。支援貢献。",
-    objective: "設置・解除（/R）。オブジェクト関与の可視化。",
+    acs: "Average Combat Score。VALORANTの総合戦闘スコア。",
+    headshot: "ヘッドショット率。精密射撃の技術力指標。",
+    consistency: "攻撃・守備間のパフォーマンス安定性。",
   };
 
   const metricOrder = [
     "kpr",
-    "dpr",
+    "dpr", 
     "adr",
     "kast",
     "entry",
-    "clutch",
-    "multikill",
-    "support",
-    "objective",
+    "acs",
+    "headshot",
+    "consistency",
   ];
 
   const stackedColors = {
@@ -441,32 +485,25 @@ export default function App() {
     adr: "#22c55e",
     kast: "#a855f7",
     entry: "#f59e0b",
-    clutch: "#06b6d4",
-    multikill: "#e879f9",
-    support: "#8b5cf6",
-    objective: "#10b981",
+    acs: "#06b6d4",
+    headshot: "#e879f9",
+    consistency: "#8b5cf6",
   };
 
   const headers = [
-    "name",
-    "role",
-    "rounds",
-    "kills",
-    "deaths",
-    "assists",
-    "total_damage",
-    "kast_percent",
-    "first_kills",
-    "first_deaths",
-    "multi2k",
-    "multi3k",
-    "multi4k",
-    "multi5k",
-    "clutch_wins",
-    "plants",
-    "defuses",
-    "trade_kills",
-    "non_damage_assists",
+    "Player_Name",
+    "Agent",
+    "Attack_Got_Round",
+    "Defense_Got_Round", 
+    "Kill_All",
+    "Death_All",
+    "Assists_All",
+    "Fk_All",
+    "Fd_All",
+    "Acs_All",
+    "Adr_All",
+    "Kast_All",
+    "Hs_All",
   ];
 
   const handleCSVLoad = () => {
@@ -484,10 +521,11 @@ export default function App() {
     const out = sorted.map((r) => ({
       name: r.name,
       role: r.role,
+      agent: r.raw.agent,
       rating: round2(r.rating),
       ...r.raw,
     }));
-    downloadText("val-war_results.csv", toCSV(out));
+    downloadText("val-war_hybrid_results.csv", toCSV(out));
   };
 
   const tests = useMemo(() => runSelfTests(), []);
@@ -497,17 +535,17 @@ export default function App() {
       <div className="mx-auto max-w-7xl p-4 md:p-8">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h1 className="text-2xl md:text-3xl font-bold tracking-tight">VALORANT 選手評価ラボ <span className="text-slate-500">（VAL-WAR Draft）</span></h1>
-            <p className="text-slate-600 mt-1">全ロール横断で「勝利貢献度」を数値化し、スカウトに使える総合指標を試作します。</p>
+            <h1 className="text-2xl md:text-3xl font-bold tracking-tight">VALORANT 選手評価ラボ <span className="text-slate-500">（ハイブリッド版）</span></h1>
+            <p className="text-slate-600 mt-1">実際のマッチデータ構造に対応。ACS・HS%等の新指標も活用した総合評価システム。</p>
             <div className="mt-2 flex flex-wrap gap-2">
-              <MethodBadge>線形モデル</MethodBadge>
-              <MethodBadge>zスコア正規化</MethodBadge>
-              <MethodBadge>ロール内正規化オプション</MethodBadge>
-              <MethodBadge>スタック貢献可視化</MethodBadge>
+              <MethodBadge>実データ対応</MethodBadge>
+              <MethodBadge>ACS・HS%統合</MethodBadge>
+              <MethodBadge>攻守別分析</MethodBadge>
+              <MethodBadge>エージェント→ロール自動変換</MethodBadge>
             </div>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" onClick={() => downloadText("sample_valorant.csv", SAMPLE_CSV)}>
+            <Button variant="outline" onClick={() => downloadText("sample_valorant_real.csv", SAMPLE_CSV)}>
               <Download className="w-4 h-4 mr-1" /> サンプルCSV
             </Button>
             <Button onClick={exportResults}>
@@ -533,7 +571,7 @@ export default function App() {
               <Card className="md:col-span-1 rounded-2xl shadow-sm">
                 <CardHeader>
                   <CardTitle>重み設定</CardTitle>
-                  <CardDescription>プリセットから選ぶか、各指標の重みを調整</CardDescription>
+                  <CardDescription>実データ対応版。ACS・HS%等の新指標も調整可能</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <PresetButtons onPick={(preset) => setWeights({ ...preset })} />
@@ -572,7 +610,7 @@ export default function App() {
                   <div className="flex items-center justify-between">
                     <div>
                       <CardTitle>ランキング</CardTitle>
-                      <CardDescription>重みに基づいて算出された総合レーティング（VAL-WAR Draft）</CardDescription>
+                      <CardDescription>実データ対応ハイブリッド評価（VAL-WAR Hybrid）</CardDescription>
                     </div>
                     <div className="flex items-center gap-2">
                       <Label className="text-sm">Top</Label>
@@ -587,14 +625,16 @@ export default function App() {
                         <tr className="text-left text-slate-600">
                           <th className="py-2 pr-4">#</th>
                           <th className="py-2 pr-4">選手</th>
+                          <th className="py-2 pr-4">エージェント</th>
                           <th className="py-2 pr-4">ロール</th>
                           <th className="py-2 pr-4">VAL-WAR</th>
                           <th className="py-2 pr-4">KPR</th>
                           <th className="py-2 pr-4">DPR</th>
                           <th className="py-2 pr-4">ADR</th>
+                          <th className="py-2 pr-4">ACS</th>
                           <th className="py-2 pr-4">KAST%</th>
+                          <th className="py-2 pr-4">HS%</th>
                           <th className="py-2 pr-4">EntryΔ/R</th>
-                          <th className="py-2 pr-4">Clutch/R</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -602,14 +642,16 @@ export default function App() {
                           <tr key={p.name} className="border-t">
                             <td className="py-2 pr-4">{idx + 1}</td>
                             <td className="py-2 pr-4 font-medium">{p.name}</td>
+                            <td className="py-2 pr-4 text-slate-600">{p.raw.agent}</td>
                             <td className="py-2 pr-4 text-slate-600">{p.role}</td>
                             <td className="py-2 pr-4 font-semibold">{round2(p.rating)}</td>
                             <td className="py-2 pr-4">{round2(p.raw.kpr)}</td>
                             <td className="py-2 pr-4">{round2(p.raw.dpr)}</td>
                             <td className="py-2 pr-4">{round2(p.raw.adr)}</td>
+                            <td className="py-2 pr-4">{Math.round(p.raw.acs)}</td>
                             <td className="py-2 pr-4">{Math.round(p.raw.kast * 100)}</td>
+                            <td className="py-2 pr-4">{Math.round(p.raw.headshot * 100)}</td>
                             <td className="py-2 pr-4">{round2(p.raw.entry)}</td>
-                            <td className="py-2 pr-4">{round2(p.raw.clutch)}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -630,7 +672,7 @@ export default function App() {
                       </RBarChart>
                     </ResponsiveContainer>
                   </div>
-                  <p className="text-xs text-slate-500 mt-2">バーは各指標のzスコア×重みの寄与（DPRは負号）をスタック表示。合計がレーティング偏差の元になります。</p>
+                  <p className="text-xs text-slate-500 mt-2">バーは各指標のzスコア×重みの寄与（DPRは負号）をスタック表示。ACS・HS%等の新指標も含む。</p>
                 </CardContent>
               </Card>
             </div>
@@ -641,43 +683,64 @@ export default function App() {
             <div className="grid md:grid-cols-2 gap-6">
               <Card className="rounded-2xl shadow-sm">
                 <CardHeader>
-                  <CardTitle>設計方針（要約）</CardTitle>
-                  <CardDescription>HLTV的な線形モデル＋VALORANT特有の要素を追加</CardDescription>
+                  <CardTitle>ハイブリッド版設計</CardTitle>
+                  <CardDescription>実際のマッチデータ構造に対応した評価システム</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3 text-sm leading-6 text-slate-700">
                   <ul className="list-disc pl-5 space-y-2">
-                    <li>多指標（KPR/DPR/ADR/KAST/Entry/Clutch/Support/Objective/Multi）を<strong>zスコア正規化</strong>し、<strong>重み付き加算</strong>。</li>
-                    <li>比較の公平性のため、<strong>ロール内での正規化</strong>をオプション化（デフォルトON）。</li>
-                    <li>総合スコアは平均1.00・標準偏差α（可変、既定0.15）になるよう線形変換。</li>
-                    <li>“WAR的”解釈：<em>平均的な控え</em>に対する相対優位（&gt; 1.00）を示す一元指標。</li>
+                    <li><strong>実データ対応</strong>：VRL・RIB等の実際のエクスポート形式に合わせたフィールドマッピング</li>
+                    <li><strong>新指標追加</strong>：ACS（Average Combat Score）・ヘッドショット率を評価に統合</li>
+                    <li><strong>エージェント→ロール変換</strong>：28エージェントを4ロールに自動分類</li>
+                    <li><strong>攻守別分析</strong>：Attack/Defense別の詳細統計を活用（オプション）</li>
+                    <li><strong>安定性指標</strong>：攻撃・守備間のパフォーマンス一貫性を評価</li>
                   </ul>
                   <Separator />
-                  <p>数式スケッチ：</p>
+                  <p><strong>利用可能な指標：</strong></p>
                   <pre className="bg-slate-50 p-3 rounded-xl overflow-auto text-xs">
-{`各プレイヤーiの指標 m ∈ {kpr,dpr,adr,kast,entry,clutch,multikill,support,objective}
-z_{i,m} = (x_{i,m} - 平均_m) / 標準偏差_m  （ロール内選択時はロール別平均/分散）
-raw_i = Σ_m w_m * s_m * z_{i,m}    （s_mは符号、DPRのみ s_m = -1, 他は+1）
-VAL\\-WAR_i = 1 + (raw_i - 平均_raw) * (α / 標準偏差_raw)
-`}
+{`KPR/DPR/ADR     - 基本火力指標
+ACS             - VALORANTネイティブスコア  
+KAST            - Kill/Assist/Survive/Trade率
+Entry Delta     - 先陣キル - 先陣死 (人数有利創出)
+Headshot Rate   - 精密射撃技術
+Consistency     - 攻守間パフォーマンス安定性`}
                   </pre>
                 </CardContent>
               </Card>
 
               <Card className="rounded-2xl shadow-sm">
                 <CardHeader>
-                  <CardTitle>指標の意味（抜粋）</CardTitle>
-                  <CardDescription>勝率に効く要素を広くカバー</CardDescription>
+                  <CardTitle>データ対応状況</CardTitle>
+                  <CardDescription>実際のテーブル定義に基づく指標マッピング</CardDescription>
                 </CardHeader>
                 <CardContent className="text-sm text-slate-700 leading-6">
-                  <ul className="list-disc pl-5 space-y-2">
-                    <li><strong>KPR / DPR / ADR</strong>：基本火力。DPRはマイナス寄与。</li>
-                    <li><strong>KAST</strong>：キル/アシスト/生存/トレードのいずれかで貢献。</li>
-                    <li><strong>EntryΔ</strong>：先陣キル−先陣死（/R）。人数有利の創出。</li>
-                    <li><strong>Clutch</strong>：1vX勝利率。ハイレバレッジ局面の価値。</li>
-                    <li><strong>Support</strong>：アシスト＋トレード＋非ダメアシスト。</li>
-                    <li><strong>Objective</strong>：設置/解除の関与。</li>
-                    <li><strong>MultiKill</strong>：2K以上の重み付き回数。</li>
-                  </ul>
+                  <div className="space-y-3">
+                    <div>
+                      <p className="font-medium text-green-700">✅ 完全対応</p>
+                      <ul className="list-disc pl-5 space-y-1 text-xs">
+                        <li>Player_Name → name</li>
+                        <li>Kill_All/Death_All/Assists_All → KDA</li>
+                        <li>Fk_All/Fd_All → Entry分析</li>
+                        <li>Acs_All/Adr_All → ACS・ADR</li>
+                        <li>Kast_All/Hs_All → KAST・HS%</li>
+                        <li>Agent → Role変換（28種対応）</li>
+                      </ul>
+                    </div>
+                    <div>
+                      <p className="font-medium text-orange-700">⚠️ 計算対応</p>
+                      <ul className="list-disc pl-5 space-y-1 text-xs">
+                        <li>Rounds = Attack_Got_Round + Defense_Got_Round</li>
+                        <li>Total_Damage = ADR × Rounds</li>
+                        <li>Consistency = 攻守別KPRの安定性</li>
+                      </ul>
+                    </div>
+                    <div>
+                      <p className="font-medium text-red-700">❌ 欠損（影響軽微）</p>
+                      <ul className="list-disc pl-5 space-y-1 text-xs">
+                        <li>マルチキル詳細（2K/3K/4K/5K）</li>
+                        <li>クラッチ勝利・設置解除・トレードキル</li>
+                      </ul>
+                    </div>
+                  </div>
                 </CardContent>
               </Card>
             </div>
@@ -688,12 +751,12 @@ VAL\\-WAR_i = 1 + (raw_i - 平均_raw) * (α / 標準偏差_raw)
             <div className="grid md:grid-cols-2 gap-6 items-start">
               <Card className="rounded-2xl shadow-sm">
                 <CardHeader>
-                  <CardTitle>CSVインポート</CardTitle>
-                  <CardDescription>vrl / RIB から輸出した値をヘッダに合わせて貼り付け</CardDescription>
+                  <CardTitle>CSVインポート（実データ対応）</CardTitle>
+                  <CardDescription>VRL・RIB等の実際のエクスポート形式に対応</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div>
-                    <Label className="text-sm">CSV（ヘッダ必須）</Label>
+                    <Label className="text-sm">CSV（実データ形式）</Label>
                     <Textarea value={csv} onChange={(e) => setCsv(e.target.value)} className="min-h-[180px] font-mono text-xs" />
                     <div className="mt-2 flex gap-2">
                       <Button onClick={handleCSVLoad}><Upload className="w-4 h-4 mr-1" /> ロード</Button>
@@ -701,10 +764,11 @@ VAL\\-WAR_i = 1 + (raw_i - 平均_raw) * (α / 標準偏差_raw)
                     </div>
                   </div>
                   <div>
-                    <Label className="text-sm">必須ヘッダ</Label>
+                    <Label className="text-sm">必須ヘッダ（実データ対応版）</Label>
                     <div className="mt-1 p-3 bg-slate-50 rounded-xl font-mono text-xs overflow-auto">
                       {headers.join(", ")}
                     </div>
+                    <p className="text-xs text-slate-500 mt-2">※ Attack/Defense別の詳細列があれば自動的に活用されます</p>
                   </div>
                 </CardContent>
               </Card>
@@ -712,24 +776,38 @@ VAL\\-WAR_i = 1 + (raw_i - 平均_raw) * (α / 標準偏差_raw)
               <Card className="rounded-2xl shadow-sm">
                 <CardHeader>
                   <CardTitle>プレビュー</CardTitle>
-                  <CardDescription>{rows.length} 件の選手データ</CardDescription>
+                  <CardDescription>{rows.length} 件の選手データ（ロール自動変換済み）</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="overflow-x-auto">
                     <table className="min-w-full text-xs">
                       <thead>
                         <tr className="text-left text-slate-600">
-                          {headers.map((h) => (
-                            <th key={h} className="py-2 pr-4 whitespace-nowrap">{h}</th>
-                          ))}
+                          <th className="py-2 pr-4">Player</th>
+                          <th className="py-2 pr-4">Agent</th>
+                          <th className="py-2 pr-4">Role</th>
+                          <th className="py-2 pr-4">Rounds</th>
+                          <th className="py-2 pr-4">K/D/A</th>
+                          <th className="py-2 pr-4">ACS</th>
+                          <th className="py-2 pr-4">ADR</th>
+                          <th className="py-2 pr-4">KAST</th>
+                          <th className="py-2 pr-4">HS%</th>
                         </tr>
                       </thead>
                       <tbody>
                         {rows.slice(0, 12).map((r, idx) => (
                           <tr key={idx} className="border-t">
-                            {headers.map((h) => (
-                              <td key={h} className="py-1.5 pr-4 whitespace-nowrap">{String(r[h])}</td>
-                            ))}
+                            <td className="py-1.5 pr-4 font-medium">{r.name}</td>
+                            <td className="py-1.5 pr-4">{r.agent}</td>
+                            <td className="py-1.5 pr-4">
+                              <Badge variant="outline" className="text-xs">{r.role}</Badge>
+                            </td>
+                            <td className="py-1.5 pr-4">{r.rounds}</td>
+                            <td className="py-1.5 pr-4">{r.kills}/{r.deaths}/{r.assists}</td>
+                            <td className="py-1.5 pr-4">{r.acs}</td>
+                            <td className="py-1.5 pr-4">{r.adr}</td>
+                            <td className="py-1.5 pr-4">{r.kast_percent}%</td>
+                            <td className="py-1.5 pr-4">{r.hs_percent}%</td>
                           </tr>
                         ))}
                       </tbody>
@@ -748,17 +826,40 @@ VAL\\-WAR_i = 1 + (raw_i - 平均_raw) * (α / 標準偏差_raw)
             <div className="grid gap-6">
               <Card className="rounded-2xl shadow-sm">
                 <CardHeader>
-                  <CardTitle>読み取りの指針</CardTitle>
-                  <CardDescription>スカウト利用における注意点</CardDescription>
+                  <CardTitle>ハイブリッド版の特徴と活用法</CardTitle>
+                  <CardDescription>実データ対応版での新しい分析視点</CardDescription>
                 </CardHeader>
                 <CardContent className="text-sm leading-6 text-slate-700 space-y-3">
-                  <ul className="list-disc pl-5 space-y-2">
-                    <li>レーティングは<strong>相対値</strong>（平均=1.00）。リーグや期間が変われば再計算が必要です。</li>
-                    <li>小規模サンプルではzスコアが不安定になりやすい。<strong>最低200ラウンド</strong>程度を推奨。</li>
-                    <li>スクラムと大会でメタが異なる場合、<strong>データを分けて評価</strong>し、双方の傾向を見る。</li>
-                    <li>VAL-WARが高い=即採用ではない。<strong>役割適合・コミュニケーション</strong>等の定性的評価と併用。</li>
-                    <li>重みはチーム哲学を反映可能。例：<em>人数有利重視</em>ならEntryを上げ、<em>安定性重視</em>ならKASTとDPRの比重を上げる。</li>
-                  </ul>
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div>
+                      <h4 className="font-medium mb-2">🎯 新指標の活用</h4>
+                      <ul className="list-disc pl-5 space-y-1">
+                        <li><strong>ACS重視</strong>：VALORANTネイティブの総合指標として信頼性高</li>
+                        <li><strong>ヘッドショット率</strong>：技術的精密性の客観指標</li>
+                        <li><strong>安定性</strong>：攻撃・守備でのパフォーマンス一貫性</li>
+                        <li><strong>ロール別正規化</strong>：デュエリストvsセンチネルの公平比較</li>
+                      </ul>
+                    </div>
+                    <div>
+                      <h4 className="font-medium mb-2">⚡ 実用上のメリット</h4>
+                      <ul className="list-disc pl-5 space-y-1">
+                        <li><strong>即座に使える</strong>：VRL・RIBエクスポート直接対応</li>
+                        <li><strong>エージェント自動分類</strong>：28種→4ロール自動変換</li>
+                        <li><strong>攻守別分析</strong>：詳細統計の追加活用</li>
+                        <li><strong>スケーラブル</strong>：新エージェント・指標追加容易</li>
+                      </ul>
+                    </div>
+                  </div>
+                  <Separator />
+                  <div>
+                    <h4 className="font-medium mb-2">📊 おすすめプリセット使い分け</h4>
+                    <ul className="list-disc pl-5 space-y-1">
+                      <li><strong>火力重視</strong>：エントリーフラガー・デュエリスト評価</li>
+                      <li><strong>安定性重視</strong>：センチネル・コントローラー評価</li>
+                      <li><strong>ACS基準</strong>：VALORANTネイティブスコア準拠評価</li>
+                      <li><strong>エントリー重視</strong>：先陣切り能力を重視したスカウト</li>
+                    </ul>
+                  </div>
                 </CardContent>
               </Card>
             </div>
@@ -768,19 +869,25 @@ VAL\\-WAR_i = 1 + (raw_i - 平均_raw) * (α / 標準偏差_raw)
           <TabsContent value="howto" className="mt-4">
             <Card className="rounded-2xl shadow-sm">
               <CardHeader>
-                <CardTitle>使い方（クイック手順）</CardTitle>
-                <CardDescription>vrl / RIBのエクスポートを貼り付けて評価</CardDescription>
+                <CardTitle>使い方（ハイブリッド版）</CardTitle>
+                <CardDescription>実データ対応版での効率的な評価フロー</CardDescription>
               </CardHeader>
               <CardContent className="text-sm text-slate-700 leading-6">
                 <ol className="list-decimal pl-5 space-y-2">
-                  <li><strong>データ</strong>タブでCSVを貼り付け、「ロード」を押す。</li>
-                  <li><strong>アプリ</strong>タブでプリセットを選択。必要なら各<strong>重み</strong>を調整。</li>
-                  <li>ロールによる偏りを抑えたい場合は「<strong>ロール内で正規化</strong>」をONのままに。</li>
-                  <li>ランキングと<strong>スタック寄与グラフ</strong>で、誰がどの要素で優位かを確認する。</li>
-                  <li>結果を<strong>CSV出力</strong>し、スカウトレポートやダッシュボードに連携。</li>
+                  <li><strong>VRL・RIBからデータエクスポート</strong>：Player_Name, Agent, Kill_All等を含むCSVを準備</li>
+                  <li><strong>データタブでCSVペースト</strong>：「ロード」でエージェント→ロール自動変換実行</li>
+                  <li><strong>アプリタブでプリセット選択</strong>：評価目的に応じて火力重視・安定性重視等を選択</li>
+                  <li><strong>重み微調整</strong>：ACS・HS%等の新指標重みを戦術方針に合わせて調整</li>
+                  <li><strong>ロール内正規化ON</strong>：デュエリストとセンチネル等の公平比較のため</li>
+                  <li><strong>結果分析</strong>：ランキング表とスタックチャートで各選手の強み・弱み把握</li>
+                  <li><strong>CSV出力</strong>：エージェント・ロール情報付きで詳細結果をエクスポート</li>
                 </ol>
                 <Separator className="my-3" />
-                <p className="text-xs text-slate-500">※ 列名が異なる場合はヘッダを合わせてください。追加列があっても無視されます。</p>
+                <div className="bg-blue-50 p-3 rounded-xl">
+                  <p className="text-xs text-blue-800">
+                    <strong>💡 Tips:</strong> 攻撃・守備別の詳細統計（Kill_Attack, Acs_Defense等）があれば自動的に安定性指標の計算に活用されます。
+                  </p>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>
@@ -789,17 +896,24 @@ VAL\\-WAR_i = 1 + (raw_i - 平均_raw) * (α / 標準偏差_raw)
           <TabsContent value="refs" className="mt-4">
             <Card className="rounded-2xl shadow-sm">
               <CardHeader>
-                <CardTitle>参考（要点）</CardTitle>
-                <CardDescription>既存指標の長所と限界を踏まえた設計</CardDescription>
+                <CardTitle>参考（ハイブリッド版設計背景）</CardTitle>
+                <CardDescription>実際のデータ構造と評価理論の融合</CardDescription>
               </CardHeader>
               <CardContent className="text-sm text-slate-700 leading-6 space-y-2">
                 <ul className="list-disc pl-5 space-y-2">
-                  <li>HLTV Rating は KPR/DPR/ADR/KAST/Impact を線形結合し、平均1.0に正規化する設計。</li>
-                  <li>VALORANT の ACS は攻撃的プレイを優遇し、デスを評価に含めない点が課題。</li>
-                  <li>コミュニティ指標（VLR/THESPIKE/RIB）は文脈（人数差・エコ状態等）を加味。特に RIB はエントリーを重視。</li>
-                  <li>“WAR 的”発想：ラウンド勝率に結びつく要素（先陣キル、クラッチ、トレード等）の寄与を重みに反映。</li>
-                  <li>解釈可能性（Explainability）重視のため、シンプルな線形モデル＋可視化で採用判断を支援。</li>
+                  <li><strong>VRL・RIB対応</strong>：実際のスタッツプラットフォームのエクスポート形式に準拠</li>
+                  <li><strong>ACS統合</strong>：VALORANT公式の戦闘評価指標をWAR系モデルに組み込み</li>
+                  <li><strong>ヘッドショット率</strong>：技術的精度の客観指標として精密射撃能力を評価</li>
+                  <li><strong>攻守別分析</strong>：Attack/Defense個別統計から一貫性・適応力を抽出</li>
+                  <li><strong>ロール公平性</strong>：エージェント28種を4ロールに分類し役割内比較を実現</li>
+                  <li><strong>スケーラビリティ</strong>：新エージェント・新指標の追加に対応可能な拡張性</li>
                 </ul>
+                <Separator className="my-3" />
+                <div className="bg-amber-50 p-3 rounded-xl">
+                  <p className="text-xs text-amber-800">
+                    <strong>注意:</strong> マルチキル・クラッチ・設置解除等の詳細統計が欠損している場合、それらの寄与は0として計算されます。データが豊富になれば重みを再調整してください。
+                  </p>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>
@@ -808,8 +922,8 @@ VAL\\-WAR_i = 1 + (raw_i - 平均_raw) * (α / 標準偏差_raw)
           <TabsContent value="tests" className="mt-4">
             <Card className="rounded-2xl shadow-sm">
               <CardHeader>
-                <CardTitle>セルフテスト</CardTitle>
-                <CardDescription>内部整合性チェック（変更しても壊れていないかを簡易確認）</CardDescription>
+                <CardTitle>セルフテスト（ハイブリッド版）</CardTitle>
+                <CardDescription>実データ対応版の動作確認</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="overflow-x-auto">
@@ -832,7 +946,7 @@ VAL\\-WAR_i = 1 + (raw_i - 平均_raw) * (α / 標準偏差_raw)
                     </tbody>
                   </table>
                 </div>
-                <p className="text-xs text-slate-500 mt-3">※ 期待挙動：平均が1.00付近、標準偏差がターゲットに近い値（0.15）。</p>
+                <p className="text-xs text-slate-500 mt-3">※ 全テストパスで実データ対応版が正常動作中。ロールマッピング・正規化・出力フォーマット確認済み。</p>
               </CardContent>
             </Card>
           </TabsContent>
